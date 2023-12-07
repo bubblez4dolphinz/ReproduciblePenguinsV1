@@ -1,0 +1,333 @@
+---
+title: "Assessment - Reproducible Penguin Figures"
+output:
+  html_document:
+  theme: journal
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+## Set up
+
+Initialise R environment, set working directory, clear workspace, load in functions and packages, and set plot theme.
+
+```{r setup-renv, message = FALSE, warning = FALSE, echo=FALSE}
+renv::init() #initialise renv
+```
+
+```{r setup-wd and clear workspace, message = FALSE, warning = FALSE, echo=FALSE}
+setwd(".") #set working directory to where the file is saved
+rm(list = ls(all.names = TRUE)) #clear workspace
+```
+
+```{r functions, message = FALSE, warning = FALSE}
+# Load the functions
+source("functions/cleaning.r")
+source("functions/packages.r")
+```
+
+```{r Install and load packages, message = FALSE, warning = FALSE}
+# Install and load packages as required
+packages <- c("palmerpenguins", "tidyverse", "janitor", "broom", "svglite", "cowplot", "gridExtra")
+check_and_load_packages(packages)
+```
+
+```{r setup-standardise plots, message = FALSE, warning = FALSE, echo=FALSE}
+theme_set(theme_minimal()) #standardise the plots
+```
+
+###### n.b. the code for some of these steps is hidden in the knitted file but can be found in the rmd file itself
+
+------------------------------------------------------------------------
+
+## QUESTION 01: Data Visualisation for Science Communication
+
+*Create a figure using the Palmer Penguin dataset that is correct but badly communicates the data.*
+
+-   [*https://www.nature.com/articles/533452a*](https://www.nature.com/articles/533452a){.uri}
+-   [*https://elifesciences.org/articles/16800*](https://elifesciences.org/articles/16800){.uri}
+
+### a) Provide your figure here:
+
+```{r bad figure code, fig.cap="Figure 1: A bad figure that is correct but badly communicates the data. It shows the log of the mean bill depth for male and female penguins", echo=FALSE}
+mean_bd <- aggregate(bill_depth_mm ~ sex, data = penguins, FUN = mean, na.rm = TRUE)
+
+ggplot(mean_bd, aes(x="", y=log(bill_depth_mm), fill=sex)) +
+  geom_bar(stat = "identity", position = "stack", width=0.1) +
+  scale_fill_manual(values=c("red", "darkgreen"))+
+  labs(title="log(mean bill depth) of each sex", x="Penguins", y="log(mean bill depth) (mm)") +
+  coord_flip() +
+  theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank())
+```
+
+### b) Write about how your design choices mislead the reader about the underlying data (200-300 words).
+
+I have plotted a stacked bar chart showing the log of the mean bill depth for each sex. The means are calculated and plotted accurately but they are obscured by the log scale, stacking, non-colour-blind friendly colouring, horizontal display, and lack of grid lines. Wong (2013) emphasises the importance of doing the work for the reader allowing them to "make a judgement at a glance"; this is certainly not the case with my chart. Bar charts are best used for count data and, while they can be used for means, a strip plot with the mean highlighted would have been better. If kept as a bar chart, it should be vertical, have two separate bars of the same colour, with natural (non-logged) y-axis scaling. Additionally, it is best practice to include error bars showing the standard deviation around the mean and label the bars with sample sizes. These changes would help correct for the fact that the mean as a single statistic can be misleading and so presenting it with context allows the reader to interpret it correctly. Moreover, the biological logic of plotting bill depth against sex for all species is flawed. While there may be sexual dimorphism within species, we may not expect a consistent pattern across species and means may be skewed by interspecific differences. Other than sex, body mass may correlate with bill depth but, again, plotting all species together as a linear model (bill_length \~ body_mass) would give a misleading negative relationship, which is reversed when species are included. This is a case of Simpson's paradox (Horst et al 2022). The lesson to be learned is the importance of investigating species differences before trying to compare some features whose relationship with the response variable may differ between species.
+
+*References:* Horst, A.M., Hill, A.P. and Gorman, K.B., 2022. Palmer Archipelago Penguins Data in the palmerpenguins R Package-An Alternative to Anderson's Irises. R Journal, 14(1).
+
+Horst AM, Hill AP, Gorman KB (2020). palmerpenguins: Palmer Archipelago (Antarctica) penguin data. R package version 0.1.0. <https://allisonhorst.github.io/palmerpenguins/>. doi: 10.5281/zenodo.3960218.
+
+Wong, D.M., 2013. The Wall Street Journal guide to information graphics: The dos and don'ts of presenting data, facts, and figures. WW Norton & Company.
+
+Ataccama. (2022, August 12). Top 10 Takeaways from WSJ Guide to Information Graphics. Ataccama. <https://www.ataccama.com/blog/top-10-takeaways-from-wsj-guide-to-information-graphics>
+
+Elsinghorst, S. (2020, October 20). The Good, the Bad and the Ugly: how (not) to visualize data. Shirin's playgRound. <https://shirinsplayground.netlify.app/2020/10/goodbadugly/>
+
+------------------------------------------------------------------------
+
+## QUESTION 2: Data Pipeline
+
+*Write a data analysis pipeline in your .rmd RMarkdown file. You should be aiming to write a clear explanation of the steps as well as clear code.*
+
+*Your code should include the steps practiced in the lab session:*
+
+-   *Load the data*
+-   *Appropriately clean the data*
+-   *Create an Exploratory Figure (**not a boxplot**)*
+-   *Save the figure*
+-   ***New**: Run a statistical test*
+-   ***New**: Create a Results Figure*
+-   *Save the figure*
+
+### Introduction
+
+The palmer penguins dataset contains information for 344 penguins from 3 different species collected from 3 islands in the Palmer Archipelago, Antarctica. The penguins_raw dataset is messy and contains column names that are not computer readable so, before we look into the data we will clean the dataset. I am interested in investigating how body mass is associated with sex and species so, first we will generate an exploratory plot splitting the dataset by species and sex. Then, we will fit a linear model, check the assumptions and run an anova. Lastly, we will create an interaction plot to help visualize the results of the anova. We find that body mass is affected by both species and sex and that there is a significant interaction of species with sex.
+
+##### I. Loading the data
+
+```{r Read in data}
+if (!dir.exists("data")) {
+  dir.create("data")
+}
+
+write.csv(penguins_raw, "data/penguins_raw.csv")
+```
+
+This creates a csv file called penguins_raw from the dataset called the same thing in the Palmer penguins package. It is saving it in a folder in the working directory called data.
+
+##### II. Cleaning the data
+
+Here I use the function I made called cleaning_penguins which removes some unnecessary columns, makes the column names computer readable (by replacing spaces with underscores and de-capitalizing letters) and lastly, shortens species names.
+
+```{r Clean data}
+penguins_clean <- cleaning_penguins(penguins_raw)
+write.csv(penguins_clean, "data/penguins_clean.csv")
+```
+
+We could cope without cleaning the names but having no spaces means we don't have to use \`column name\` formatting and standardizing it means it is easier to start typing the right thing so R can suggest the completion. Overall, it is neater and easier to work with now.
+
+##### III. Creating an exploratory figure
+
+```{r Data Exploration figure, fig.cap="Figure 2: An exploratory figure showing the distribution of body masses within each sex in each species"}
+exploratory_fig <- ggplot(na.omit(penguins_clean), 
+                          aes(x = sex, y = body_mass_g, colour=sex)) +
+  geom_jitter(width = 0.2, height = 0) +
+  facet_wrap(vars(species), ncol = 3) +
+  labs(title="Relationship of sex and species to body mass", x="Species", y="Body mass (g)") +
+  scale_x_discrete(labels = c("FEMALE" = "F", "MALE" = "M")) +
+  scale_color_brewer(palette = "Set1") +
+  theme(legend.position = "bottom")
+exploratory_fig
+```
+
+I plotted a jitter plot splitting the penguins by sex and species to see if any within or between species patterns emerged. It does seem that generally across species the males weigh more than the femaes and that Gentoos weigh more than either Adelies or Chinstraps. Moreover, the discrepancy between sexes seems larger in Adelies and Gentoos than in Chinstraps so, I propose that there is an interaction there between sex and species.
+
+##### IV. Saving the exploratory figure
+
+```{r Saving exploratory figure, echo=FALSE}
+if (!dir.exists("figures")) {
+  dir.create("figures")
+}
+
+svglite("figures/fig01_exploratory.svg", #svglite saves the figure as an svg (Scalable Vector Graphics) file to the wd
+        width = 5.9, height = 5.9) 
+exploratory_fig
+while (!is.null(dev.list()))  dev.off()
+```
+
+###### n.b. the code to save the figures is hidden in the knitted file but can be found in the rmd file itself
+
+### Hypotheses
+
+Looking just at Chinstrap and Gentoo, I hypothesize that there will be significant effects of both species and sex on body mass and also that there will be a significant interaction of species and sex.
+
+-   H0.1: There is no difference in mean body mass between species
+-   HA.1: There is a significant difference in mean body mass between species
+-   H0.2: There is no difference in mean body mass between sexes
+-   HA.1: There is a significant difference in mean body mass between sexes
+-   H0.3: There is no interaction between sex and species
+-   HA.3: There is a significant interaction between species and sex
+
+### Statistical Methods
+
+##### I. Fitting the linear model
+
+```{r Statistics - model and assumptions}
+#removing adelie species using dplyr filter() function & omitting cases with NAs
+rm.adelie <- penguins_clean %>%
+  filter(!species == "Adelie") %>% 
+  na.omit(c("species", "sex", "body_mass_g")) 
+
+#fitting the linear model
+bm_factors <- lm(body_mass_g ~ species*sex, rm.adelie)
+```
+
+Firstly, for this analysis I just wanted to only compare Chinstrap and Gentoo penguins so I used the dplyr 'filter()' function to remove the Adelie penguins.
+
+I fitted a full linear model proposing that body mass is affected by species, sex and the interaction between the two. i.e. Body mass \~ mu + Species + Sex + Species\*Sex.
+
+##### II. Checking assumptions
+
+Before going ahead with analysis on the linear model I needed to check the validity of the assumptions. The cases must be sampled randomly and be independent. The residuals must have equal variance across groups (homoscedasticity) and be normally distributed. And the relationship should be linear. I will run some diagnostic plots to check these.
+
+```{r Testing assumptions1, fig.cap="Figure 3: Diagnostic plots to check the assumptions of a linear model"}
+#checking assumptions with diagnostic plots
+par(mfrow = c(1, 2))
+plot(bm_factors, which = 1)
+plot(bm_factors, which = 2)
+```
+
+###### \^ The residual vs plotted graph allows us to investigate non-linearity and homoscedasticity. The points appear to be randomly spread out about the line, with no discernible non-linear trends or indications of non-constant variance. The qqplot helps us assess if the residuals are randomly distributed and given they fit nicely to the qqline, they are consistent with normality. [see below for further explanation]
+
+Assumptions:
+
+1.  Random & Independent cases: As far as I'm aware, the penguins in the dataset were sampled randomly from their populations and they are independent cases.
+2.  Linearity and Homoscedasticity: In the residual vs fitted plot, each of the vertical lines are about the same length and the residual cloud is contained within a uniform horizontal band. The lack of pattern (i.e. oscillation or funnel shape) indicates roughly equal variance across groups and no major deviation from linearity.
+3.  In the qqplot, the real residuals map very well to the theoretical quantiles they should fall into, assuming normal distribution. There is only minor deviation at the extremes. This is consistent with normally distributed residuals
+
+We can go ahead with fitting a linear model as I am satisfied that the assumptions have not been seriously violated and the anova is fairly robust to minor deviations especially with large sample sizes like these.
+
+### Results & Discussion
+
+#### I. Results of ANOVA
+
+```{r Model outputs and ANOVA results}
+summary(bm_factors) #summary table of model outputs
+anova(bm_factors) #results of running an anova test
+```
+
+**First:** The Adjusted R squared is 0.8519, meaning that our model can explain 85% of all the variation seen. This is very high and gives the model biological significance to accompany the statistical significance reflected in the large F-statistic (357.6) and very small p-value (\<2.2e-16 \<\< 0.05).
+
+**Second:** Interpreting the coefficients table
+
+-   row 1 is the mean body mass Female Chinstraps (=3527.21g)
+-   row 2 is the difference between mean mass of Female Gentoos and Chinstraps. So, Female Gentoos are (3527.21 + 1152.54 =4679.75g)
+-   row 3 is the difference between mean mass of Male and Female Chinstraps. So, Male chinstraps are (3527.21 + 411.76 =3938.97g)
+-   row 4 was the expected difference between mean mass of Male Gentoos and Female Chinstraps if there were to be no interaction. So, to get the mean for Male Gentoos we have to add all the rows (3527.21 + 1152.54 + 411.76 + 393.33 =5484.84)
+
+**Third:** The ANOVA table shows that species (\< 2.2e-16), sex (\< 2.2e-16) and the interaction (4.285e-05) tems are all significant so, we have sufficient evidence to reject all three null hypotheses. This means we do not have to simplify the model. Lastly, the F value is largest (840.10) for species so, that is our main effect. The interaction has the smallest F value (17.58) so, though significant, it has a minor effect.
+
+#### II. Post-hoc pairwise comparison test
+
+```{r Post-hoc test}
+#post-hoc Tukey Kramer test
+res <- tidy(TukeyHSD(aov(bm_factors))) %>% 
+  select(-term, -null.value, -conf.low, -conf.high) 
+#I have slimmed down the results output using tidy() from broom and select() from dplyr
+
+#making a neat output for knitted file
+knitr::kable(res, caption = "Table 1: Results table from Tukey Kramer test")
+```
+
+###### \^ The Tukey-Kramer test compares all possible pairs of group means and the output is the difference estimate and p-vales for those comparisons. Its possible that only a few particularly significant comparisons are behind the significance of the whole model but here we find that not to be the case as all the comparisons are significant.
+
+I ran an post hoc Tukey-Kramer test to work out which groups were different from each other. It turns out they all were (all the adj p-values were \< 0.05) but particularly significant seems to be the comparison between Gentoo Males and Females which makes sense given our exploratory and interaction plots.
+
+#### III. Making an interaction plot
+
+```{r Plotting Results, fig.cap="Figure 4: Interaction plot showing the results of the anova test on body mass ~ species*sex for Gentoo and Chinstraps penguins"}
+#making an interaction plot
+interaction_plot <- ggplot(na.omit(rm.adelie), 
+                           aes(x = species, y = body_mass_g, color = sex)) +
+  geom_point(position = position_dodge(width = 0.5)) +
+  geom_line(aes(group = sex), position = position_dodge(width = 0.5)) +
+  labs(title="Interaction Plot of Body Mass by Species and Sex with ANOVA results table", x = "Species", y = "Body Mass (g)", color = "Sex") 
+
+#extracting info from anova table
+anova_df <- tidy(aov(bm_factors))  %>% #tidy() from broom takes the messy output from aov() and turns it into a summarised tibble
+  select(-df, -sumsq, -meansq) %>% #removing some unwanted columns
+  filter(term != "Residuals") %>% #removing the residuals row
+  rename("F.value" = "statistic") %>% #Re-naming statistic to F.value
+  tableGrob() #tableGrob() from gridExtra turns a dataframe into a tablegrob that can be added to grid graphics objects
+
+#plot_grid() from cowplot allows me to plot the the interaction plot and the table next to each other
+Interaction_plot_combo <- plot_grid(interaction_plot, anova_df, nrow = 1) 
+
+Interaction_plot_combo
+```
+
+From the interaction plot, it makes sense that we saw a major effect of species and a smaller effect of sex. The sex difference we did see was probably largely driven by the Gentoos. The slopes are different which is consistent with the significant interaction (species:sex) term. It makes sense that the interaction effect is relatively small however as the slopes are not massively different.
+
+#### IV. Saving the interaction plot
+
+```{r Saving results figure, echo=FALSE}
+svglite("figures/fig02_results.svg", 
+        width = 5.9, height = 5.9) 
+Interaction_plot_combo
+while (!is.null(dev.list()))  dev.off()
+```
+
+###### n.b. the code to save the figures is hidden in the knitted file but can be found in the rmd file itself
+
+### Conclusion
+
+The results of my ANOVA analysis reveal what I suspected from the exploratory plot that when comparing Chinstrap and Gentoo penguins there would be significant effects on body mass of both species and sex as well as a significant interaction between the two. The full linear model I fitted had very high explanatory power (R-squared = 0.815) and statistical signficance (p\<2.2e-16). Species was the major effect which makes biological sense because we would expect body mass to differ between species as a consequence of evolving in different niches. Also, its possible that body mass contributes to sexual dimorphism within species but that pattern is unlikely to overpower interspecific differences. For instance, in the exploratory plot we see that Gentoo females are larger than most Adelie and Chinstrap males. Also, it is likely that the extent of sexual dimorphism would differ between species and that features other than body mass would be under sexual selection pressure. To extend this research, I suggest investigating the influence of location (i.e. home island) on body mass. It is possible that the species differences we have seen is down to island preference. Some islands could support bigger animals of whatever species finds itself there. Moreover, this could be complicated if the species compete such that Chinstraps and Adelie may reach bigger sizes in the absence of large Gentoos. Further exploratory plots followed by statistical analysis could contribute to fully deciphering the patterns of body mass across these species of penguins.
+
+------------------------------------------------------------------------
+
+## QUESTION 3: Open Science
+
+### a) GitHub
+
+*My GitHub link:* <https://github.com/bubblez4dolphinz/ReproduciblePenguinsV1/tree/main>
+
+### b) Share your repo with a partner, download, and try to run their data pipeline.
+
+*Partner's GitHub link:* <https://github.com/anon6509/penguin_project>
+
+### c) Reflect on your experience running their code. (300-500 words)
+
+***What elements of your partner's code helped you to understand their data pipeline?***
+
+-   The text in each section made it very clear why we were doing each step. For instance, the introduction explained why we needed to clean the data and why the exploratory plot was insufficient on its own to draw conclusions about strength and significance from. The workflow was logical and well justified.
+-   The use of #notes at the start of each chunk made the workflow easy to follow. I particularly appreciated the notes under the correlation test code as they picked out the relevant bits of information I needed to understand the results/discussion section.
+-   I thought all the object, function and file names were good. They were computer and human readable. That made it easy to keep a track of what was happening to what.
+
+***Did it run? Did you need to fix anything?***
+
+-   I wasn't able to download the folders 'data_a' and 'figures_a' from github, only the files therein. I didn't encounter any issues with saving the images - the code made a folder called 'figures_a' and happily saved the png files there. However, it was not able to do the same for the csv files and I had to create a folder so perhaps the code could have included dir.create("data_a").
+-   Other than that, the code ran beautifully.
+
+***What suggestions would you make for improving their code to make it more understandable or reproducible, and why?***
+
+-   I think the code was both understandable and reproducible. There were only a few instances of minorly bloated code in that certain lines were not needed.
+    -   Cleaning code: A function was made called clean_column_names() which applies the clean_names() function to penguin_data. But, in the script, both clean_column_names() and clean_names() were applied in sequence and I believe they do the same thing.
+    -   I don't think 'penguins_raw \<- read.csv("data_a/penguins_raw.csv")' is needed because the working directory is set so R already understands penguins_raw as an object.
+-   I thought the stats test and its results were easy to follow but perhaps they could have acknowledged the 95% confidence interval, given they add it as a comment.
+-   Removing all columns and rows with any NAs is okay but it may have removed cases unecessarily - i.e. cases that had information for species, culmen_depth and culmen_length but lacked body_mass, for instance. It is not a big problem at all and I doubt it would make a difference to the significance of the stats test but generally I feel it would be best practice to use all possible data or at least justify its removal. Otherwise, another group may run the same test on the same variables and get a different r or p value and not understand why. To resolve, perhaps they could specify to only remove columns and rows with NAs in the specifically used columns or use na.omit() when plotting and running the tests.
+-   Maybe it would have been good to use a renv project library or a for loop to only install missing packages to avoid overwriting packages already installed on the user's computer in case other code on the user's computer relied on an older package version. Additionally, they could have included a version list of packages and Rstudio used.
+-   I wasn't sure what the 'ragg' package was for or where it was used so, they could have added a comment to make that clear to the user.
+
+***If you needed to alter your partner's figure using their code, do you think that would be easy or difficult, and why?***
+
+-   I think it would be easy because each layer in ggplot was nicely separated so its clear to see where I would have to type to change a label or colour, for example.
+-   Moreover, using ggplot2 and simple code (no unnecessary extensions) makes it easy to follow and edit.
+-   I wonder if it would be helpful however, to create an object that extracts the r and p values so that if I ran the same test on different variables, I could put that object in as the "label" rather than typing it out myself? But then again, they are not very long numbers so it isn't a problem. Same goes for turning the plot into a function so one could type in the x and y and generate the whole plot; it would be neat but only worthwhile if several of the same kind of plot were going to be generated.
+
+### d) Reflect on your own code based on your experience with your partner's code and their review of yours. (300-500 words)
+
+***What improvements did they suggest, and do you agree?***
+
+There were three main points
+
+1.  I used some unfamiliar functions so I should highlight where and why I used them. I agree. I also find it difficult to understand when somebody has used unfamiliar packages. They all apply to the results plot so I have added notes there to say which of their functions I am using.
+2.  I put all the cleaning steps into one function which masks what it is doing somewhat. I do see what they mean but separating the steps out doesn't save as many lines of code and I think the function itself in cleaning.r is well annotated so all the steps make sense. I will however add a sentence before the cleaning code explaining what it will do.
+3.  I should explain the diagnostic plots more. I do not want to dwell on them too much as they are simply testing assumptions but I will add text for each saying what we would expect to see were the assumptions to be upheld so the reader can interpret the results for themself before I get to the discussion section.
+
+***What did you learn about writing code for other people?***
+
+I learned the importance of considering your audience. For instance, because my partner had a good understanding of statistics, that section made sense with only a little extra clarification needed for the diagnostic plots. But, I can imagine that another reader may have needed more guidance with the statistics section. The same applies for the packages used. While some people may be familiar with all the packages used, others will not be so, it is worth me making the extra effort to clarify where and why they are used. I also reflected more generally on the importance of reproducibility and transparency in research and endeavored to make my code and text logical and easy to follow with justified steps. Additionally, I took care to ensure packages can be installed and updated in an isolated renv project library out of courtesy to the user so as to not overwrite packages they may already use.
